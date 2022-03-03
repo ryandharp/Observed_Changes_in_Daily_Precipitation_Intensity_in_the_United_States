@@ -1,0 +1,83 @@
+This file contains documentation for archived code and data for 'Observed Changes in Daily Precipitation Intensity
+in the United States' by Ryan D. Harp and Daniel E. Horton (initially submitted to Geophysical Research Letters on
+February 25th, 2022). The following guide will detail the origin (whether downloaded or created) of files necessary to
+successfully recreate our analysis.
+
+Python modules necessary:
+- cartopy
+- datetime
+- geopandas
+- matplotlib
+- numpy
+- pandas
+- scipy
+- shapely
+- time
+
+Files downloaded and their initial location:
+- NEON domain shapefiles: https://www.neonscience.org/data-samples/data/spatial-data-maps (under Quick Downloads >
+    Domain Polygons)
+- GHCN station data and metadata: https://www.ncei.noaa.gov/products/land-based-station/global-historical-climatology-network-daily
+
+Scripts and their inputs/outputs:
+- ghcn_summarizer.py: this script loops through all stations listed in the ghcnd-stations.txt summary file and
+    compiles summary statistics and metadata on each station.
+    - input:
+        ghcnd_stations.txt (downloaded from GHCN portal)
+        ghcnd-stations_file_compare.csv (manually created by comparing available file list with list of stations in
+            metadata)
+        all available GHCN-D station csv files (downloaded from GHCN portal)
+    - output:
+        ghcnd_summary.csv: list of all available stations and relevant metadata and summary statistics
+- station_NEON_assignment.py: this script loops through all stations in the summary/metadata file and determines which
+    NEON domain each station falls within.
+    - input:
+        ghcnd_summary.csv (created by ghcn_summarizer.py)
+        NEON_Domains.shp (NEON domain shapefiles downloaded from neonscience.org)
+    - output:
+        US_stations_with_NEON.csv: list of all available stations within the US and relevant metadata/summary
+            statistics, including NEON domain
+- daily_precip_stats_spatial.py: this script compiles daily observations for all available qualifying stations
+    - input:
+        US_stations_with_NEON.csv (created by station_NEON_assignment.py)
+        all available GHCN-D station csv files (downloaded from GHCN portal)
+    - output:
+        *_daily_first_half_pdf.npy: domain-specific aggregation of all daily observations within the early period
+            (1951-1980) for qualifying stations regardless of if the station qualifies for both the early and
+            late periods
+        *_daily_second_half_pdf.npy: domain-specific aggregation of all daily observations within the late period
+            (1981-2020) for qualifying stations regardless of if the station qualifies for both the early and late
+            periods
+        *_daily_both_first_half_pdf.npy: domain-specific aggregation of all daily observations within the early period
+            for qualifying stations which have observations spanning both early and late periods
+        *_daily_both_second_half_pdf.npy: domain-specific aggregation of all daily observations within the late period
+            for qualifying stations which have observations spanning both early and late periods
+        NEON_domain_daily_precip_stats.csv: list of all qualifying stations and summary statistics on number of daily
+            observations for early/late periods and the domain the station falls within
+- daily_precip_moment_calculations.py: this script calculates statistical moments and their change for each
+    time period and domain combination
+    - input:
+        *_daily_first_half_pdf.npy (created by daily_precip_stats_spatial.py)
+        *_daily_second_half_pdf.npy (created by daily_precip_stats_spatial.py)
+        *_daily_both_first_half_pdf.npy (created by daily_precip_stats_spatial.py)
+        *_daily_both_second_half_pdf.npy (created by daily_precip_stats_spatial.py)
+    - output:
+        bootstrapped_precipitation_daily_pdf_moments_both_median.csv: statistical moments for the early distribution
+            as well as change in statistical moments between early and late distributions and results of the
+            Kolmogorov-Smirnov and Anderson-Darling tests for each domain. Only includes stations which qualify for
+            both the early and late periods
+        bootstrapped_precipitation_daily_pdf_moments_first_and_second_median.csv: statistical moments for the early
+            distribution as well as change in statistical moments between early and late distributions and results of
+            the Kolmogorov-Smirnov and Anderson-Darling tests for each domain. Includes all stations which qualify for
+            either the early or late period
+- precipitation_intensity_plots.py: this script produces all figures for article
+    - input:
+        NEON_Domains.shp (NEON domain shapefiles downloaded from neonscience.org)
+        bootstrapped_precipitation_daily_pdf_moments_both_median.csv (created by daily_precip_moment_calculations.py)
+        bootstrapped_precipitation_daily_pdf_moments_first_and_second_median.csv
+            (created by daily_precip_moment_calculations.py)
+        *_daily_first_half_pdf.npy (created by daily_precip_stats_spatial.py)
+        *_daily_second_half_pdf.npy (created by daily_precip_stats_spatial.py)
+        NEON_domain_daily_precip_stats.csv (created by daily_precip_stats_spatial.py)
+    - output:
+        Figures 1-3, S1-17

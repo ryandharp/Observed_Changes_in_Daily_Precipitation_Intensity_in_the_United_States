@@ -1,18 +1,10 @@
 #%% Importing Modules
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
-import pymannkendall as mk
 import time
-import scipy.stats as ss
-import sys
 
 
-#%% Collecting Input Values
-# py_script_name, num_qual_years, precip_min_cutoff = sys.argv
-# num_qual_years = int(num_qual_years)
-# precip_min_cutoff = int(precip_min_cutoff)
-
+#%% Specifying Input Values
 num_qual_years = 50  # number of years needed for an acceptable station record
 percent_qualifying_years = 90  # percentage of years qualifying necessary for an acceptable station record
 yearly_pct_threshold = 5  # percent of missing values allowed
@@ -29,13 +21,8 @@ zero_year_threshold = 0  # number of zero precip years allowed
 
 
 #%% Defining Functions
-# streamlined mann-kendall test
-def mannkendall(time_series):
-    trend, h, p, z, Tau, s, var_s, slope, intercept = mk.original_test(time_series)
-    return p, slope
-
-# running mean
 def window_calculations(time_series, window_length, year_list, threshold):
+    # running mean calculator
     half_window = window_length // 2
     windowed_data_mean = np.zeros(np.shape(year_list[half_window:-half_window])); windowed_data_mean[:] = np.nan
     windowed_data_std = np.zeros(np.shape(year_list[half_window:-half_window])); windowed_data_std[:] = np.nan
@@ -50,20 +37,8 @@ def window_calculations(time_series, window_length, year_list, threshold):
         c += 1
     return windowed_data_mean, windowed_data_std, windowed_data_cov
 
-def window_percentiles(time_series, window_length, year_list):
-    half_window = window_length // 2
-    windowed_data_10 = np.zeros(np.shape(year_list[half_window:-half_window])); windowed_data_10[:] = np.nan
-    windowed_data_25 = np.zeros(np.shape(year_list[half_window:-half_window])); windowed_data_25[:] = np.nan
-    c = 0
-    for year in year_list[half_window:-half_window]:  # looping through years to use as window centers
-        windowed_data = time_series[(year_list >= (year - half_window)) & (year_list <= (year + half_window))]
-        windowed_data_mean[c] = windowed_data.mean()
-        windowed_data_std[c] = windowed_data.std()
-        c += 1
-    return windowed_data_mean, windowed_data_std
-
-# data threshold analysis
 def load_station(fname):
+    # loads data for a given station
     df = pd.read_csv(fname, dtype={'DATE': object, 'PRCP': float, 'TMAX': float, 'TMIN': float, 'PRCP_ATTRIBUTES': str,
                                    'TMAX_ATTRIBUTES': str, 'TMIN_ATTRIBUTES': str}, low_memory=False)
     data = df.filter(['DATE', 'PRCP', 'TMAX', 'TMIN', 'PRCP_ATTRIBUTES', 'TMAX_ATTRIBUTES', 'TMIN_ATTRIBUTES'])
@@ -72,6 +47,7 @@ def load_station(fname):
     return data
 
 def explode_flags(compact_data):
+    # this expands flagged data and automatically reassigns flagged values as nan
     min_ind = compact_data.index[compact_data['PRCP_ATTRIBUTES'].notnull()].min()
     if compact_data['PRCP_ATTRIBUTES'][min_ind].count(',') == 3:
         compact_data[['PRCP_MEAS_FLAG', 'PRCP_QUAL_FLAG', 'PRCP_SOURCE_CODE', 'PRCP_TIME']] = compact_data['PRCP_ATTRIBUTES'].str.split(',', expand=True)
@@ -82,6 +58,7 @@ def explode_flags(compact_data):
     return compact_data
 
 def get_days_in_year2(years_array, first_year, last_year):
+    # gets the number of days in a year
     days_in_year_array = np.zeros(np.shape(years_array))
     i = 0
     for yr in years_array:
@@ -104,6 +81,7 @@ def get_days_in_year2(years_array, first_year, last_year):
     return days_in_year_array, total_days, total_days_series, total_years_array
 
 def get_total_days_in_year_series(qual_years):
+    # gets the number of days in a year across all qualifying years
     num_days = 0
     for yr in qual_years:
         if yr % 4 == 0:
@@ -114,6 +92,7 @@ def get_total_days_in_year_series(qual_years):
     return num_days
 
 def get_pct_missing(station_data, days_in_year, total_days, years_array, total_days_series):
+    # calculates the amount of missing data in a given station-year and returns relevant summary statistics
     date_mask = (station_data['DATE'].dt.year >= start_year) & (station_data['DATE'].dt.year <= last_year)
     num_days_in_data_year = station_data['PRCP'].groupby(station_data['DATE'][date_mask].dt.year).count()
     num_days_in_data_year_series = pd.Series(num_days_in_data_year, years_array)
@@ -125,26 +104,13 @@ def get_pct_missing(station_data, days_in_year, total_days, years_array, total_d
     # total_pct_missing = 100 - (days_in_year.sum() - num_missing_flagged.sum())/days_in_year.sum()*100
     return yearly_pct_missing, total_pct_missing
 
-def region_mannkendall(regional_df):
-    regional_ts = np.transpose(np.array(regional_df))
-    regional_mk_results = mk.regional_test(np.transpose(regional_ts[1:]))
-    region_var_p = regional_mk_results[2]
-    region_var_slope = regional_mk_results[7]
-    return region_var_p, region_var_slope
-
 
 #%% Loading File List
-# ghcn_stations = pd.read_csv('/Users/ryanharp/Documents/great_lakes_precip_variability/ghcn_summary.csv')
-# ghcn_stations = pd.read_csv('/home/rdh0715/ghcn_summary.csv')
 # ghcn_stations = pd.read_csv('/Users/ryanharp/Documents/great_lakes_precip_variability/supplemental_files/US_stations_with_neon.csv')
 ghcn_stations = pd.read_csv('/home/rdh0715/US_stations_with_NEON.csv')
 
 qual_stations = ghcn_stations[(ghcn_stations['num_qual_years'] > num_qual_years) & (ghcn_stations['pct_qual_years'] >= percent_qualifying_years)]
-# # 50 years > 5830 stations, 70 > 2091, 100 > 741
-# domain = 5  # testing with Great Lakes NEON region
-# qual_stations = qual_stations[qual_stations['NEON_domain'] == domain]
 
-# qual_stations = qual_stations[qual_stations['station_id'].str.slice(0,2) == 'US']
 qual_station_id = qual_stations['station_id']
 qual_lat = qual_stations['latitude']
 qual_lon = qual_stations['longitude']
@@ -152,7 +118,7 @@ qual_year_length = qual_stations['num_qual_years']
 neon_domain = qual_stations['NEON_domain']
 
 
-#%% Establishing Arrays
+#%% Preallocating Arrays
 array_size = np.shape(qual_station_id)
 station_id_list = []
 station_lat = np.zeros(array_size); station_lat[:] = np.nan
@@ -173,10 +139,9 @@ smoothed_mean_dry_missing_percentage_array = np.zeros(array_size); smoothed_mean
 del array_size
 
 
-#%%
-# preparing for analysis
-qual_flags = ['D', 'G', 'I', 'K', 'L', 'M', 'N', 'O', 'R', 'S', 'T', 'W', 'X', 'Z']
-j = 0
+#%% Analysis Prep
+qual_flags = ['D', 'G', 'I', 'K', 'L', 'M', 'N', 'O', 'R', 'S', 'T', 'W', 'X', 'Z']  # specifying GHCN flags
+j = 0  # starting counter
 
 len_qual_stations = len(qual_station_id)
 print(len_qual_stations)
@@ -190,9 +155,9 @@ full_count_total = np.zeros(num_regions); full_count_total[:] = np.nan
 
 start = time.time()
 
-for domain in np.unique(neon_domain):
+for domain in np.unique(neon_domain):  # looping over all domains
     # domain = 5  # using Great Lakes as an example
-    domain_stations = qual_stations[neon_domain == domain]
+    domain_stations = qual_stations[neon_domain == domain]  # getting list of all stations in the specified domain
 
     domain = int(domain)
     print(domain)
@@ -206,10 +171,11 @@ for domain in np.unique(neon_domain):
     domain_precip_both_first_half_pdf = np.array([])
     domain_precip_both_second_half_pdf = np.array([])
 
+    # initializing early/late/both count variables
     early_count = 0
     late_count = 0
     full_count = 0
-    for i, station in domain_stations['station_id'].iteritems():
+    for i, station in domain_stations['station_id'].iteritems():  # looping over all stations in a given domain
         fname = station + '.csv'
         print(fname)
 
@@ -251,9 +217,9 @@ for domain in np.unique(neon_domain):
 
 
         #%% Data Cleaning
-        # converting mm and removing all events less than 1/3 mm
+        # converting to mm and removing all events less than 1/3 mm
         data['PRCP'] = data['PRCP']/10  # converting to mm from tenths-mm
-        data['PRCP_DATE'] = data['PRCP'] >= precip_min_cutoff  # could use 3 mm cutoff instead
+        data['PRCP_DATE'] = data['PRCP'] >= precip_min_cutoff
         data['PRCP_QUAL'] = data['PRCP'][data['PRCP_DATE']]
         # year_list = data['DATE'].dt.year.unique()
         full_precip = data['PRCP_QUAL'][data['DATE'].dt.year.isin(qual_years)]
@@ -265,16 +231,13 @@ for domain in np.unique(neon_domain):
         del zero_years
 
 
-        #%% Seasonal Calculations
+        #%% Aggregating all observations for the early and late time periods
         first_half_qual_years = qual_years[(qual_years >= first_half_year_min) & (qual_years < first_half_year_max)]
         second_half_qual_years = qual_years[(qual_years >= second_half_year_min) & (qual_years < second_half_year_max)]
 
         early = False
         late = False
         both = False
-        # station_early_days[j] = 0
-        # station_late_days[j] = 0
-        # station_both_days[j] = 0
 
         if (start_year <= first_half_year_min) & (last_year >= first_half_year_max):
             first_half_precip = data['PRCP_QUAL'][data['DATE'].dt.year.isin(first_half_qual_years)]
@@ -335,7 +298,7 @@ results_df['late_days'] = station_late_days
 results_df['both_days'] = station_both_days
 
 
-results_df.to_csv('/home/rdh0715/NEON_domain_daily_precip_stats.csv')
+results_df.to_csv('/home/rdh0715/NEON_domain_daily_precip_stats.csv')  # saving summary statistics for each domain
 
 
 
@@ -419,287 +382,3 @@ results_df.to_csv('/home/rdh0715/NEON_domain_daily_precip_stats.csv')
 # results_df.to_csv('/home/rdh0715/precip_stats_' + str(num_qual_years) + '_years_' + str(precip_min_cutoff) + 'mm_threshold_v2.csv')
 # results_smoothed_df.to_csv('/home/rdh0715/smoothed_precip_stats_' + str(num_qual_years) + '_years_' + str(precip_min_cutoff) + 'mm_threshold_v2.csv')
 #
-
-
-
-
-#%%  Old Code
-
-
-# def window_mask(time_series, window_length, year_list):
-#     half_window = window_length // 2
-#     windowed_per = np.zeros(np.shape(year_list[half_window:-half_window])); windowed_data_mask[:] = np.nan
-#     c = 0
-#     for year in year_list[half_window:-half_window]:  # looping through years to use as window centers
-#         windowed_per[c] = (np.sum((time_series.index >= (year - half_window)) & (time_series.index <= (year + half_window))==True))/window_length
-#         c += 1
-#     return windowed_per
-
-
-# annual_per_10_p_array = np.zeros(array_size); annual_per_10_p_array[:] = np.nan
-# annual_per_10_slope_array = np.zeros(array_size); annual_per_10_slope_array[:] = np.nan
-# annual_per_25_p_array = np.zeros(array_size); annual_per_25_p_array[:] = np.nan
-# annual_per_25_slope_array = np.zeros(array_size); annual_per_25_slope_array[:] = np.nan
-# annual_per_50_p_array = np.zeros(array_size); annual_per_50_p_array[:] = np.nan
-# annual_per_50_slope_array = np.zeros(array_size); annual_per_50_slope_array[:] = np.nan
-# annual_per_75_p_array = np.zeros(array_size); annual_per_75_p_array[:] = np.nan
-# annual_per_75_slope_array = np.zeros(array_size); annual_per_75_slope_array[:] = np.nan
-# annual_per_90_p_array = np.zeros(array_size); annual_per_90_p_array[:] = np.nan
-# annual_per_90_slope_array = np.zeros(array_size); annual_per_90_slope_array[:] = np.nan
-# annual_per_95_p_array = np.zeros(array_size); annual_per_95_p_array[:] = np.nan
-# annual_per_95_slope_array = np.zeros(array_size); annual_per_95_slope_array[:] = np.nan
-# annual_per_99_p_array = np.zeros(array_size); annual_per_99_p_array[:] = np.nan
-# annual_per_99_slope_array = np.zeros(array_size); annual_per_99_slope_array[:] = np.nan
-# annual_per_max_p_array = np.zeros(array_size); annual_per_max_p_array[:] = np.nan
-# annual_per_max_slope_array = np.zeros(array_size); annual_per_max_slope_array[:] = np.nan
-
-
-# smoothed_annual_per_10_p_array = np.zeros(array_size); smoothed_annual_per_10_p_array[:] = np.nan
-# smoothed_annual_per_10_slope_array = np.zeros(array_size); smoothed_annual_per_10_slope_array[:] = np.nan
-# smoothed_annual_per_10_var_p_array = np.zeros(array_size); smoothed_annual_per_10_var_p_array[:] = np.nan
-# smoothed_annual_per_10_var_slope_array = np.zeros(array_size); smoothed_annual_per_10_var_slope_array[:] = np.nan
-# smoothed_annual_per_10_cov_p_array = np.zeros(array_size); smoothed_annual_per_10_cov_p_array[:] = np.nan
-# smoothed_annual_per_10_cov_slope_array = np.zeros(array_size); smoothed_annual_per_10_cov_slope_array[:] = np.nan
-# smoothed_annual_per_25_p_array = np.zeros(array_size); smoothed_annual_per_25_p_array[:] = np.nan
-# smoothed_annual_per_25_slope_array = np.zeros(array_size); smoothed_annual_per_25_slope_array[:] = np.nan
-# smoothed_annual_per_25_var_p_array = np.zeros(array_size); smoothed_annual_per_25_var_p_array[:] = np.nan
-# smoothed_annual_per_25_var_slope_array = np.zeros(array_size); smoothed_annual_per_25_var_slope_array[:] = np.nan
-# smoothed_annual_per_25_cov_p_array = np.zeros(array_size); smoothed_annual_per_25_cov_p_array[:] = np.nan
-# smoothed_annual_per_25_cov_slope_array = np.zeros(array_size); smoothed_annual_per_25_cov_slope_array[:] = np.nan
-# smoothed_annual_per_50_p_array = np.zeros(array_size); smoothed_annual_per_50_p_array[:] = np.nan
-# smoothed_annual_per_50_slope_array = np.zeros(array_size); smoothed_annual_per_50_slope_array[:] = np.nan
-# smoothed_annual_per_50_var_p_array = np.zeros(array_size); smoothed_annual_per_50_var_p_array[:] = np.nan
-# smoothed_annual_per_50_var_slope_array = np.zeros(array_size); smoothed_annual_per_50_var_slope_array[:] = np.nan
-# smoothed_annual_per_50_cov_p_array = np.zeros(array_size); smoothed_annual_per_50_cov_p_array[:] = np.nan
-# smoothed_annual_per_50_cov_slope_array = np.zeros(array_size); smoothed_annual_per_50_cov_slope_array[:] = np.nan
-# smoothed_annual_per_75_p_array = np.zeros(array_size); smoothed_annual_per_75_p_array[:] = np.nan
-# smoothed_annual_per_75_slope_array = np.zeros(array_size); smoothed_annual_per_75_slope_array[:] = np.nan
-# smoothed_annual_per_75_var_p_array = np.zeros(array_size); smoothed_annual_per_75_var_p_array[:] = np.nan
-# smoothed_annual_per_75_var_slope_array = np.zeros(array_size); smoothed_annual_per_75_var_slope_array[:] = np.nan
-# smoothed_annual_per_75_cov_p_array = np.zeros(array_size); smoothed_annual_per_75_cov_p_array[:] = np.nan
-# smoothed_annual_per_75_cov_slope_array = np.zeros(array_size); smoothed_annual_per_75_cov_slope_array[:] = np.nan
-# smoothed_annual_per_90_p_array = np.zeros(array_size); smoothed_annual_per_90_p_array[:] = np.nan
-# smoothed_annual_per_90_slope_array = np.zeros(array_size); smoothed_annual_per_90_slope_array[:] = np.nan
-# smoothed_annual_per_90_var_p_array = np.zeros(array_size); smoothed_annual_per_90_var_p_array[:] = np.nan
-# smoothed_annual_per_90_var_slope_array = np.zeros(array_size); smoothed_annual_per_90_var_slope_array[:] = np.nan
-# smoothed_annual_per_90_cov_p_array = np.zeros(array_size); smoothed_annual_per_90_cov_p_array[:] = np.nan
-# smoothed_annual_per_90_cov_slope_array = np.zeros(array_size); smoothed_annual_per_90_cov_slope_array[:] = np.nan
-# smoothed_annual_per_95_p_array = np.zeros(array_size); smoothed_annual_per_95_p_array[:] = np.nan
-# smoothed_annual_per_95_slope_array = np.zeros(array_size); smoothed_annual_per_95_slope_array[:] = np.nan
-# smoothed_annual_per_95_var_p_array = np.zeros(array_size); smoothed_annual_per_95_var_p_array[:] = np.nan
-# smoothed_annual_per_95_var_slope_array = np.zeros(array_size); smoothed_annual_per_95_var_slope_array[:] = np.nan
-# smoothed_annual_per_95_cov_p_array = np.zeros(array_size); smoothed_annual_per_95_cov_p_array[:] = np.nan
-# smoothed_annual_per_95_cov_slope_array = np.zeros(array_size); smoothed_annual_per_95_cov_slope_array[:] = np.nan
-# smoothed_annual_per_99_p_array = np.zeros(array_size); smoothed_annual_per_99_p_array[:] = np.nan
-# smoothed_annual_per_99_slope_array = np.zeros(array_size); smoothed_annual_per_99_slope_array[:] = np.nan
-# smoothed_annual_per_99_var_p_array = np.zeros(array_size); smoothed_annual_per_99_var_p_array[:] = np.nan
-# smoothed_annual_per_99_var_slope_array = np.zeros(array_size); smoothed_annual_per_99_var_slope_array[:] = np.nan
-# smoothed_annual_per_99_cov_p_array = np.zeros(array_size); smoothed_annual_per_99_cov_p_array[:] = np.nan
-# smoothed_annual_per_99_cov_slope_array = np.zeros(array_size); smoothed_annual_per_99_cov_slope_array[:] = np.nan
-# smoothed_annual_per_max_p_array = np.zeros(array_size); smoothed_annual_per_max_p_array[:] = np.nan
-# smoothed_annual_per_max_slope_array = np.zeros(array_size); smoothed_annual_per_max_slope_array[:] = np.nan
-# smoothed_annual_per_max_var_p_array = np.zeros(array_size); smoothed_annual_per_max_var_p_array[:] = np.nan
-# smoothed_annual_per_max_var_slope_array = np.zeros(array_size); smoothed_annual_per_max_var_slope_array[:] = np.nan
-# smoothed_annual_per_max_cov_p_array = np.zeros(array_size); smoothed_annual_per_max_cov_p_array[:] = np.nan
-# smoothed_annual_per_max_cov_slope_array = np.zeros(array_size); smoothed_annual_per_max_cov_slope_array[:] = np.nan
-
-
-# Percentiles
-# annual_per_10 = data['PRCP_QUAL'][data['DATE'].dt.year.isin(qual_years)].groupby(data['DATE'].dt.year).quantile(q=0.1,
-#                                                                                                                 interpolation='linear')
-# annual_per_25 = data['PRCP_QUAL'][data['DATE'].dt.year.isin(qual_years)].groupby(data['DATE'].dt.year).quantile(q=0.25,
-#                                                                                                                 interpolation='linear')
-# annual_per_50 = data['PRCP_QUAL'][data['DATE'].dt.year.isin(qual_years)].groupby(data['DATE'].dt.year).quantile(q=0.5,
-#                                                                                                                 interpolation='linear')
-# annual_per_75 = data['PRCP_QUAL'][data['DATE'].dt.year.isin(qual_years)].groupby(data['DATE'].dt.year).quantile(q=0.75,
-#                                                                                                                 interpolation='linear')
-# annual_per_90 = data['PRCP_QUAL'][data['DATE'].dt.year.isin(qual_years)].groupby(data['DATE'].dt.year).quantile(q=0.9,
-#                                                                                                                 interpolation='linear')
-# annual_per_95 = data['PRCP_QUAL'][data['DATE'].dt.year.isin(qual_years)].groupby(data['DATE'].dt.year).quantile(q=0.95,
-#                                                                                                                 interpolation='linear')
-# annual_per_99 = data['PRCP_QUAL'][data['DATE'].dt.year.isin(qual_years)].groupby(data['DATE'].dt.year).quantile(q=0.99,
-#                                                                                                                 interpolation='linear')
-# annual_per_max = data['PRCP_QUAL'][data['DATE'].dt.year.isin(qual_years)].groupby(data['DATE'].dt.year).max()
-#
-# annual_per_10_p, annual_per_10_slope = mannkendall(annual_per_10)
-# annual_per_10_smoothed, annual_per_10_var_smoothed, annual_per_10_cov_smoothed = window_calculations(annual_per_10,
-#                                                                                                      window_length,
-#                                                                                                      years, threshold)
-# annual_per_10_smoothed_p, annual_per_10_smoothed_slope = mannkendall(annual_per_10_smoothed)
-# annual_per_10_var_smoothed_p, annual_per_10_var_smoothed_slope = mannkendall(annual_per_10_var_smoothed)
-# annual_per_10_cov_smoothed_p, annual_per_10_cov_smoothed_slope = mannkendall(annual_per_10_cov_smoothed)
-#
-# annual_per_25_p, annual_per_25_slope = mannkendall(annual_per_25)
-# annual_per_25_smoothed, annual_per_25_var_smoothed, annual_per_25_cov_smoothed = window_calculations(annual_per_25,
-#                                                                                                      window_length,
-#                                                                                                      years, threshold)
-# annual_per_25_smoothed_p, annual_per_25_smoothed_slope = mannkendall(annual_per_25_smoothed)
-# annual_per_25_var_smoothed_p, annual_per_25_var_smoothed_slope = mannkendall(annual_per_25_var_smoothed)
-# annual_per_25_cov_smoothed_p, annual_per_25_cov_smoothed_slope = mannkendall(annual_per_25_cov_smoothed)
-#
-# annual_per_50_p, annual_per_50_slope = mannkendall(annual_per_50)
-# annual_per_50_smoothed, annual_per_50_var_smoothed, annual_per_50_cov_smoothed = window_calculations(annual_per_50,
-#                                                                                                      window_length,
-#                                                                                                      years, threshold)
-# annual_per_50_smoothed_p, annual_per_50_smoothed_slope = mannkendall(annual_per_50_smoothed)
-# annual_per_50_var_smoothed_p, annual_per_50_var_smoothed_slope = mannkendall(annual_per_50_var_smoothed)
-# annual_per_50_cov_smoothed_p, annual_per_50_cov_smoothed_slope = mannkendall(annual_per_50_cov_smoothed)
-#
-# annual_per_75_p, annual_per_75_slope = mannkendall(annual_per_75)
-# annual_per_75_smoothed, annual_per_75_var_smoothed, annual_per_75_cov_smoothed = window_calculations(annual_per_75,
-#                                                                                                      window_length,
-#                                                                                                      years, threshold)
-# annual_per_75_smoothed_p, annual_per_75_smoothed_slope = mannkendall(annual_per_75_smoothed)
-# annual_per_75_var_smoothed_p, annual_per_75_var_smoothed_slope = mannkendall(annual_per_75_var_smoothed)
-# annual_per_75_cov_smoothed_p, annual_per_75_cov_smoothed_slope = mannkendall(annual_per_75_cov_smoothed)
-#
-# annual_per_90_p, annual_per_90_slope = mannkendall(annual_per_90)
-# annual_per_90_smoothed, annual_per_90_var_smoothed, annual_per_90_cov_smoothed = window_calculations(annual_per_90,
-#                                                                                                      window_length,
-#                                                                                                      years, threshold)
-# annual_per_90_smoothed_p, annual_per_90_smoothed_slope = mannkendall(annual_per_90_smoothed)
-# annual_per_90_var_smoothed_p, annual_per_90_var_smoothed_slope = mannkendall(annual_per_90_var_smoothed)
-# annual_per_90_cov_smoothed_p, annual_per_90_cov_smoothed_slope = mannkendall(annual_per_90_cov_smoothed)
-#
-# annual_per_95_p, annual_per_95_slope = mannkendall(annual_per_95)
-# annual_per_95_smoothed, annual_per_95_var_smoothed, annual_per_95_cov_smoothed = window_calculations(annual_per_95,
-#                                                                                                      window_length,
-#                                                                                                      years, threshold)
-# annual_per_95_smoothed_p, annual_per_95_smoothed_slope = mannkendall(annual_per_95_smoothed)
-# annual_per_95_var_smoothed_p, annual_per_95_var_smoothed_slope = mannkendall(annual_per_95_var_smoothed)
-# annual_per_95_cov_smoothed_p, annual_per_95_cov_smoothed_slope = mannkendall(annual_per_95_cov_smoothed)
-#
-# annual_per_99_p, annual_per_99_slope = mannkendall(annual_per_99)
-# annual_per_99_smoothed, annual_per_99_var_smoothed, annual_per_99_cov_smoothed = window_calculations(annual_per_99,
-#                                                                                                      window_length,
-#                                                                                                      years, threshold)
-# annual_per_99_smoothed_p, annual_per_99_smoothed_slope = mannkendall(annual_per_99_smoothed)
-# annual_per_99_var_smoothed_p, annual_per_99_var_smoothed_slope = mannkendall(annual_per_99_var_smoothed)
-# annual_per_99_cov_smoothed_p, annual_per_99_cov_smoothed_slope = mannkendall(annual_per_99_cov_smoothed)
-#
-# annual_per_max_p, annual_per_max_slope = mannkendall(annual_per_max)
-# annual_per_max_smoothed, annual_per_max_var_smoothed, annual_per_max_cov_smoothed = window_calculations(annual_per_max,
-#                                                                                                         window_length,
-#                                                                                                         years,
-#                                                                                                         threshold)
-# annual_per_max_smoothed_p, annual_per_max_smoothed_slope = mannkendall(annual_per_max_smoothed)
-# annual_per_max_var_smoothed_p, annual_per_max_var_smoothed_slope = mannkendall(annual_per_max_var_smoothed)
-# annual_per_max_cov_smoothed_p, annual_per_max_cov_smoothed_slope = mannkendall(annual_per_max_cov_smoothed)
-
-
-# smoothed_annual_per_10_p_array[j] = annual_per_10_smoothed_p
-# smoothed_annual_per_10_slope_array[j] = annual_per_10_smoothed_slope
-# smoothed_annual_per_10_var_p_array[j] = annual_per_10_var_smoothed_p
-# smoothed_annual_per_10_var_slope_array[j] = annual_per_10_var_smoothed_slope
-# smoothed_annual_per_10_cov_p_array[j] = annual_per_10_cov_smoothed_p
-# smoothed_annual_per_10_cov_slope_array[j] = annual_per_10_cov_smoothed_slope
-# smoothed_annual_per_25_p_array[j] = annual_per_25_smoothed_p
-# smoothed_annual_per_25_slope_array[j] = annual_per_25_smoothed_slope
-# smoothed_annual_per_25_var_p_array[j] = annual_per_25_var_smoothed_p
-# smoothed_annual_per_25_var_slope_array[j] = annual_per_25_var_smoothed_slope
-# smoothed_annual_per_25_cov_p_array[j] = annual_per_25_cov_smoothed_p
-# smoothed_annual_per_25_cov_slope_array[j] = annual_per_25_cov_smoothed_slope
-# smoothed_annual_per_50_p_array[j] = annual_per_50_smoothed_p
-# smoothed_annual_per_50_slope_array[j] = annual_per_50_smoothed_slope
-# smoothed_annual_per_50_var_p_array[j] = annual_per_50_var_smoothed_p
-# smoothed_annual_per_50_var_slope_array[j] = annual_per_50_var_smoothed_slope
-# smoothed_annual_per_50_cov_p_array[j] = annual_per_50_cov_smoothed_p
-# smoothed_annual_per_50_cov_slope_array[j] = annual_per_50_cov_smoothed_slope
-# smoothed_annual_per_75_p_array[j] = annual_per_75_smoothed_p
-# smoothed_annual_per_75_slope_array[j] = annual_per_75_smoothed_slope
-# smoothed_annual_per_75_var_p_array[j] = annual_per_75_var_smoothed_p
-# smoothed_annual_per_75_var_slope_array[j] = annual_per_75_var_smoothed_slope
-# smoothed_annual_per_75_cov_p_array[j] = annual_per_75_cov_smoothed_p
-# smoothed_annual_per_75_cov_slope_array[j] = annual_per_75_cov_smoothed_slope
-# smoothed_annual_per_90_p_array[j] = annual_per_90_smoothed_p
-# smoothed_annual_per_90_slope_array[j] = annual_per_90_smoothed_slope
-# smoothed_annual_per_90_var_p_array[j] = annual_per_90_var_smoothed_p
-# smoothed_annual_per_90_var_slope_array[j] = annual_per_90_var_smoothed_slope
-# smoothed_annual_per_90_cov_p_array[j] = annual_per_90_cov_smoothed_p
-# smoothed_annual_per_90_cov_slope_array[j] = annual_per_90_cov_smoothed_slope
-# smoothed_annual_per_95_p_array[j] = annual_per_95_smoothed_p
-# smoothed_annual_per_95_slope_array[j] = annual_per_95_smoothed_slope
-# smoothed_annual_per_95_var_p_array[j] = annual_per_95_var_smoothed_p
-# smoothed_annual_per_95_var_slope_array[j] = annual_per_95_var_smoothed_slope
-# smoothed_annual_per_95_cov_p_array[j] = annual_per_95_cov_smoothed_p
-# smoothed_annual_per_95_cov_slope_array[j] = annual_per_95_cov_smoothed_slope
-# smoothed_annual_per_99_p_array[j] = annual_per_99_smoothed_p
-# smoothed_annual_per_99_slope_array[j] = annual_per_99_smoothed_slope
-# smoothed_annual_per_99_var_p_array[j] = annual_per_99_var_smoothed_p
-# smoothed_annual_per_99_var_slope_array[j] = annual_per_99_var_smoothed_slope
-# smoothed_annual_per_99_cov_p_array[j] = annual_per_99_cov_smoothed_p
-# smoothed_annual_per_99_cov_slope_array[j] = annual_per_99_cov_smoothed_slope
-# smoothed_annual_per_max_p_array[j] = annual_per_max_smoothed_p
-# smoothed_annual_per_max_slope_array[j] = annual_per_max_smoothed_slope
-# smoothed_annual_per_max_var_p_array[j] = annual_per_max_var_smoothed_p
-# smoothed_annual_per_max_var_slope_array[j] = annual_per_max_var_smoothed_slope
-# smoothed_annual_per_max_cov_p_array[j] = annual_per_max_cov_smoothed_p
-# smoothed_annual_per_max_cov_slope_array[j] = annual_per_max_cov_smoothed_slope
-
-
-# results_df['10_percentile_p'] = annual_per_10_p_array
-# results_df['10_percentile_slope'] = annual_per_10_slope_array
-# results_df['25_percentile_p'] = annual_per_25_p_array
-# results_df['25_percentile_slope'] = annual_per_25_slope_array
-# results_df['50_percentile_p'] = annual_per_50_p_array
-# results_df['50_percentile_slope'] = annual_per_50_slope_array
-# results_df['75_percentile_p'] = annual_per_75_p_array
-# results_df['75_percentile_slope'] = annual_per_75_slope_array
-# results_df['90_percentile_p'] = annual_per_90_p_array
-# results_df['90_percentile_slope'] = annual_per_90_slope_array
-# results_df['95_percentile_p'] = annual_per_95_p_array
-# results_df['95_percentile_slope'] = annual_per_95_slope_array
-# results_df['99_percentile_p'] = annual_per_99_p_array
-# results_df['99_percentile_slope'] = annual_per_99_slope_array
-# results_df['max_percentile_p'] = annual_per_max_p_array
-# results_df['max_percentile_slope'] = annual_per_max_slope_array
-
-
-# results_smoothed_df['10_percentile_p'] = smoothed_annual_per_10_p_array
-# results_smoothed_df['10_percentile_slope'] = smoothed_annual_per_10_slope_array
-# results_smoothed_df['10_percentile_var_p'] = smoothed_annual_per_10_var_p_array
-# results_smoothed_df['10_percentile_var_slope'] = smoothed_annual_per_10_var_slope_array
-# results_smoothed_df['10_percentile_cov_p'] = smoothed_annual_per_10_cov_p_array
-# results_smoothed_df['10_percentile_cov_slope'] = smoothed_annual_per_10_cov_slope_array
-# results_smoothed_df['25_percentile_p'] = smoothed_annual_per_25_p_array
-# results_smoothed_df['25_percentile_slope'] = smoothed_annual_per_25_slope_array
-# results_smoothed_df['25_percentile_var_p'] = smoothed_annual_per_25_var_p_array
-# results_smoothed_df['25_percentile_var_slope'] = smoothed_annual_per_25_var_slope_array
-# results_smoothed_df['25_percentile_cov_p'] = smoothed_annual_per_25_cov_p_array
-# results_smoothed_df['25_percentile_cov_slope'] = smoothed_annual_per_25_cov_slope_array
-# results_smoothed_df['50_percentile_p'] = smoothed_annual_per_50_p_array
-# results_smoothed_df['50_percentile_slope'] = smoothed_annual_per_50_slope_array
-# results_smoothed_df['50_percentile_var_p'] = smoothed_annual_per_50_var_p_array
-# results_smoothed_df['50_percentile_var_slope'] = smoothed_annual_per_50_var_slope_array
-# results_smoothed_df['50_percentile_cov_p'] = smoothed_annual_per_50_cov_p_array
-# results_smoothed_df['50_percentile_cov_slope'] = smoothed_annual_per_50_cov_slope_array
-# results_smoothed_df['75_percentile_p'] = smoothed_annual_per_75_p_array
-# results_smoothed_df['75_percentile_slope'] = smoothed_annual_per_75_slope_array
-# results_smoothed_df['75_percentile_var_p'] = smoothed_annual_per_75_var_p_array
-# results_smoothed_df['75_percentile_var_slope'] = smoothed_annual_per_75_var_slope_array
-# results_smoothed_df['75_percentile_cov_p'] = smoothed_annual_per_75_cov_p_array
-# results_smoothed_df['75_percentile_cov_slope'] = smoothed_annual_per_75_cov_slope_array
-# results_smoothed_df['90_percentile_p'] = smoothed_annual_per_90_p_array
-# results_smoothed_df['90_percentile_slope'] = smoothed_annual_per_90_slope_array
-# results_smoothed_df['90_percentile_var_p'] = smoothed_annual_per_90_var_p_array
-# results_smoothed_df['90_percentile_var_slope'] = smoothed_annual_per_90_var_slope_array
-# results_smoothed_df['90_percentile_cov_p'] = smoothed_annual_per_90_cov_p_array
-# results_smoothed_df['90_percentile_cov_slope'] = smoothed_annual_per_90_cov_slope_array
-# results_smoothed_df['95_percentile_p'] = smoothed_annual_per_95_p_array
-# results_smoothed_df['95_percentile_slope'] = smoothed_annual_per_95_slope_array
-# results_smoothed_df['95_percentile_var_p'] = smoothed_annual_per_95_var_p_array
-# results_smoothed_df['95_percentile_var_slope'] = smoothed_annual_per_95_var_slope_array
-# results_smoothed_df['95_percentile_cov_p'] = smoothed_annual_per_95_cov_p_array
-# results_smoothed_df['95_percentile_cov_slope'] = smoothed_annual_per_95_cov_slope_array
-# results_smoothed_df['99_percentile_p'] = smoothed_annual_per_99_p_array
-# results_smoothed_df['99_percentile_slope'] = smoothed_annual_per_99_slope_array
-# results_smoothed_df['99_percentile_var_p'] = smoothed_annual_per_99_var_p_array
-# results_smoothed_df['99_percentile_var_slope'] = smoothed_annual_per_99_var_slope_array
-# results_smoothed_df['99_percentile_cov_p'] = smoothed_annual_per_99_cov_p_array
-# results_smoothed_df['99_percentile_cov_slope'] = smoothed_annual_per_99_cov_slope_array
-# results_smoothed_df['max_percentile_p'] = smoothed_annual_per_max_p_array
-# results_smoothed_df['max_percentile_slope'] = smoothed_annual_per_max_slope_array
-# results_smoothed_df['max_percentile_var_p'] = smoothed_annual_per_max_var_p_array
-# results_smoothed_df['max_percentile_var_slope'] = smoothed_annual_per_max_var_slope_array
-# results_smoothed_df['max_percentile_cov_p'] = smoothed_annual_per_max_cov_p_array
-# results_smoothed_df['max_percentile_cov_slope'] = smoothed_annual_per_max_cov_slope_array
