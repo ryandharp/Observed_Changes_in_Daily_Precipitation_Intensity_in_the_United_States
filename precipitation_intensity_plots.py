@@ -280,10 +280,14 @@ for domain in np.arange(1, 18, 1):  # looping over each domain
     hist_diff_extended = np.append([np.nan, np.nan], hist_diff_extended)
     hist_diff_rolling = pd.Series(hist_diff_extended).rolling(5, min_periods=3).mean()[4:]
 
+    # need hist_diff_rolling, pdf_1_hist_density
     pfit = np.polyfit(pdf_1_hist_density[1][:-1], hist_diff_rolling, 4)
     plt.plot(np.linspace(1, per_99, 500), np.polyval(pfit, np.linspace(1, per_99, 500)), 'k', linewidth=3)
+    # test_space = test_space = np.linspace(0, 99, num_bins)
+    # pfit = np.polyfit(test_space[:-1], hist_diff_rolling, 4)
+    # plt.plot(np.linspace(0, 99, 500), np.polyval(pfit, np.linspace(0, 99, 500)), 'k', linewidth=3)
     plt.axhline(y=0, color='k')
-    plt.xticks([0, per_99], ['0th', '99th'], fontsize=24)
+    plt.xticks([0, 99], ['0th', '99th'], fontsize=24)
     plt.ylim([-30, 65])
     plt.yticks([-25, 0, 25, 50], fontsize=24)
     # plt.title('domain ' + str(domain))
@@ -398,7 +402,7 @@ plt.show()
 # qual_stations_with_domain = US_ghcn_stations_with_domain[(US_ghcn_stations_with_domain['num_qual_years'] > num_qual_years) & (US_ghcn_stations_with_domain['pct_qual_years'] >= percent_qualifying_years)]  # checking for completeness of record
 #
 # # tweaking domain name list to get y-tick labels
-# domain_names = neon_gdf['DomainName']
+# domain_names = nca_gdf['DomainName']
 # domain_names = domain_names.drop_duplicates()
 #
 # fig, ax = plt.subplots(figsize = (10,8))
