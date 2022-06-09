@@ -62,12 +62,8 @@ def get_pct_missing(station_data, days_in_year, total_days, years_array, total_d
     date_mask = (station_data['DATE'].dt.year >= start_year) & (station_data['DATE'].dt.year <= last_year)
     num_days_in_data_year = station_data['PRCP'].groupby(station_data['DATE'][date_mask].dt.year).count()
     num_days_in_data_year_series = pd.Series(num_days_in_data_year, years_array)
-    # num_missing_flagged = station_data['PRCP'].isnull().groupby(station_data['DATE'][date_mask].dt.year).sum().astype(int)
-    # years_mask = np.isin(years, num_days_in_data_year.index)
     yearly_pct_missing  = 100 - (num_days_in_data_year_series.divide(total_days_series, fill_value=0)*100)
     total_pct_missing = 100 - sum(num_days_in_data_year)/total_days*100
-    # yearly_pct_missing = 100 - (days_in_year[years_mask] - num_missing_flagged)/days_in_year[years_mask]*100
-    # total_pct_missing = 100 - (days_in_year.sum() - num_missing_flagged.sum())/days_in_year.sum()*100
     return yearly_pct_missing, total_pct_missing
 
 
@@ -102,7 +98,6 @@ elevation = np.zeros(np.shape(stations_meta)[0]); elevation[:] = np.nan
 name = np.zeros(np.shape(stations_meta)[0], dtype=object); name[:] = np.nan
 
 start_year_array = np.zeros(np.shape(stations_meta)[0]); start_year_array[:] = np.nan
-# first_year_trimmed_array = np.zeros(np.shape(stations_meta)[0]); first_year_trimmed_array[:] = np.nan
 last_year_array = np.zeros(np.shape(stations_meta)[0]); last_year_array[:] = np.nan
 num_years_qual_array = np.zeros(np.shape(stations_meta)[0]); num_years_qual_array[:] = np.nan
 pct_years_qual_array = np.zeros(np.shape(stations_meta)[0]); pct_years_qual_array[:] = np.nan
@@ -115,14 +110,11 @@ ind_array = list([])
 
 #%% Looping over all stations
 qual_flags = ['D', 'G', 'I', 'K', 'L', 'M', 'N', 'O', 'R', 'S', 'T', 'W', 'X', 'Z']
-yearly_pct_threshold = 5
+yearly_pct_threshold = 10  # percentage of missing days allowed in a qualifying year
 start_time = time.time()
 
 for ind, row in stations_meta[~stations_meta['station_id'].isin(unavailable_files)].iterrows():
     print(ind)
-
-    # row = stations_meta.loc[ind]
-    # fname = '~/Documents/great_lakes_precip_variability/raw_data/' + row.station_id + '.csv'
     fname = '/projects/b1045/GHCN/' + row.station_id + '.csv'
     temp_data = load_station(fname)
     if ("PRCP" in temp_data) is False:
@@ -132,28 +124,15 @@ for ind, row in stations_meta[~stations_meta['station_id'].isin(unavailable_file
         print('skipping: no precip data')
         continue
     station_data = explode_flags(temp_data)
+
     # getting first/last date
     start_date = station_data['DATE'].min()
     start_year = start_date.date().year
-    # if (station_data['DATE'].min().month != 1) | (station_data['DATE'].min().day != 1):
-    #     start_year = start_date.year + 1
-    # else:
-    #     start_year = start_date.year
     last_date = station_data['DATE'].max()
     last_year = last_date.date().year
-    # if last_date == 2021:
-    #     last_year = 2020
-    # else:
-    #     last_year = last_date
     start_year_array[ind] = start_year
     last_year_array[ind] = last_year
-    # if last_year - start_year < 10:
-    #     num_years_qual_array[ind] = np.nan
-    #     pct_years_qual_array[ind] = np.nan
-    #     first_year_trimmed_array[ind] = np.nan
-    #     num_years_missing_trimmed_array[ind] = np.nan
-    #     pct_years_missing_trimmed_array[ind] = np.nan
-    #     continue
+
     # getting year arrays
     years_array = station_data['DATE'].dt.year.unique()
     days_in_year, total_days, total_days_series, total_years_array = get_days_in_year2(years_array, start_year, last_year)
@@ -166,25 +145,6 @@ for ind, row in stations_meta[~stations_meta['station_id'].isin(unavailable_file
     total_pct_missing_array[ind] = total_pct_missing
     qual_years_array.append(qual_years)
     annual_pct_missing_array.append(yearly_pct_missing)
-    # pct_years_missing_trimmed = num_years_missing/len(years)*100
-    # flag = False
-    # if pct_years_missing_trimmed > 5:
-    #     yearly_missing_bool = np.array(yearly_pct_missing < 5)
-    #     for i in range(1, len(yearly_missing_bool)):
-    #         pct_years_missing_trimmed = 100 - yearly_missing_bool[i:].mean()*100
-    #         num_years_missing_trimmed = yearly_missing_bool[i:].sum()
-    #         if pct_years_missing_trimmed <= 5:
-    #             total_pct_missing_trimmed = np.array(yearly_pct_missing)[i:].mean()
-    #             flag = True
-    #             break
-    # if flag:
-    #     first_year_trimmed_array[ind] = years[i]
-    #     del i
-    # elif flag is False:
-    #     first_year_trimmed_array[ind] = start_year_array[ind]
-    # first_year_trimmed_array[ind] = start_year
-    # num_years_missing_trimmed_array[ind] = num_years_missing_trimmed
-    # pct_years_missing_trimmed_array[ind] = pct_years_missing_trimmed
     station_id[ind] = row.station_id
     latitude[ind] = row.lat
     longitude[ind] = row.lon
@@ -196,17 +156,13 @@ end_time = time.time()
 print(end_time-start_time)
 
 len_years = last_year_array - start_year_array
-# len_years_trimmed = last_year_array - first_year_trimmed_array
-# qual_years_series = pd.Series(qual_years_array, index=ind_array)
-# annual_pct_missing_series = pd.Series(annual_pct_missing_array, index=ind_array)
 
 
 #%% Creating metadata file
 # creating pandas dataframe
 ghcn_summary = pd.DataFrame({'station_id': [], 'latitude': [], 'longitude': [], 'elevation': [], 'name': [],
-                              'start_year': [], 'last_year': [], 'len_years': [], 'qual_years': [],
-                              'num_qual_years': [], 'pct_qual_years': [], 'annual_pct_missing': [],
-                              'pct_days_missing': []})
+                              'start_year': [], 'last_year': [], 'len_years': [], 'num_qual_years': [],
+                              'pct_qual_years': [], 'pct_days_missing': []})
 # populating dataframe
 ghcn_summary['station_id'] = station_id
 ghcn_summary['latitude'] = latitude
@@ -216,10 +172,8 @@ ghcn_summary['name'] = name
 ghcn_summary['start_year'] = start_year_array
 ghcn_summary['last_year'] = last_year_array
 ghcn_summary['len_years'] = len_years
-# ghcn_summary['qual_years'] = qual_years_series
 ghcn_summary['num_qual_years'] = num_years_qual_array
 ghcn_summary['pct_qual_years'] = pct_years_qual_array
-# ghcn_summary['annual_pct_missing'] = annual_pct_missing_series
 ghcn_summary['pct_days_missing'] = total_pct_missing_array
 
 ghcn_summary = ghcn_summary[~ghcn_summary['station_id'].isnull()]
