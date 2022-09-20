@@ -4,3 +4,5 @@ This repository contains all software scripts and intermediate or final data nec
 Note that pre-processed two-year station blocks are available within domain- and region-specific zip files.
 
 Please contact Ryan Harp at ryan.harp@northwestern.edu with any questions.
+
+[![DOI](https://zenodo.org/badge/463677336.svg)](https://zenodo.org/badge/latestdoi/463677336)
